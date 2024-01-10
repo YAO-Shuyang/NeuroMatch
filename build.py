@@ -1,12 +1,14 @@
 import numpy as np
 from numba import jit
 
+# No jit takes ~13.5 seconds for 10000 times
+# with jit takes ~ 6.5~7.5 seconds for 10000 times
 @jit(nopython=True)
 def find_candidates(
     i: int,
     index_line: np.ndarray, 
     index_maps: list[np.ndarray],
-    pref_sessions: list[int]
+    ref_sessions: list[int] | np.ndarray
 ) -> np.ndarray:
     """find_candidates: find all potential candidates at empty position i in index_line
 
@@ -21,6 +23,8 @@ def find_candidates(
         by distinct reference sessions, and provide sufficient information for finding
         candidates.
         Each index_map are 2-dimensional, with shape (n_sessions, n_neurons)
+    ref_sessions : list[int]
+        A list of reference sessions.
 
     Returns
     -------
@@ -36,16 +40,31 @@ def find_candidates(
     candidates = np.zeros((n_neuron*n_ref, 3))*np.nan
     for j in range(index_line.shape[0]):
         if j != i and index_line[j] != 0:
-            for k in len(index_maps):
+            for k in range(len(index_maps)):
                 # find line with  in index_map k
                 idx = np.where(index_maps[k][j, :] == index_line[j])[0][0]
                 if index_maps[k][i, idx] != 0:
                     candidates[j*n_ref + k, 0] = index_maps[k][i, idx]
                     candidates[j*n_ref + k, 1] = index_line[j]
-                    candidates[j*n_ref + k, 2] = pref_sessions[k]
+                    candidates[j*n_ref + k, 2] = ref_sessions[k]
     
-    return candidates
+    return candidates[np.where(np.isnan(candidates[:, 0]) == False)]
+
 
 
 if __name__ == '__main__':
-    index
+    from neuromatch.read import read_index_map
+    
+    index_map = read_index_map(r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Cell_reg\cellRegistered.mat")
+    
+    index_maps = [read_index_map(dir_name) for dir_name in [
+        r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Ref "+str(i)+r"\cellRegistered.mat" for i in [1, 4, 7, 10, 15, 17, 20, 23, 26]
+    ]]
+    
+    ref_sessions = np.array([1, 4, 7, 10, 15, 17, 20, 23, 26])
+    
+    import time
+    t1 = time.time()
+    for i in range(100000):
+        candidates = find_candidates(10, index_map[:, 26], index_maps, ref_sessions)
+    print(time.time() - t1, candidates)
