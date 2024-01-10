@@ -72,6 +72,7 @@ def find_weak_pos(
     -------
     np.ndarray with shape (n, ), where n is the number of weak position.
     """
+    pass
 
 if __name__ == '__main__':
     from neuromatch.read import read_index_map
