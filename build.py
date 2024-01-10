@@ -50,7 +50,7 @@ def find_candidates(
     
     return candidates[np.where(np.isnan(candidates[:, 0]) == False)]
 
-def 
+
 
 if __name__ == '__main__':
     from neuromatch.read import read_index_map
