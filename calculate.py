@@ -1,7 +1,7 @@
 # To define the criteria of neuron re-matching.
 import numpy as np
 
-def calc_register_score(index_line: np.ndarray, p_same: np.ndarray, p_thre: float = 0.05) -> float:
+def calc_register_score(p_same: np.ndarray, p_thre: float = 0.05) -> float:
     """calc_register_score: it is a function to calculate the register score.
     Refer to CellReg: https://doi.org/10.1016/j.celrep.2017.10.013
     and Github repository: https://github.com/zivlab/CellReg/blob/master/CellReg/compute_scores.m
@@ -50,8 +50,6 @@ def calc_register_score(index_line: np.ndarray, p_same: np.ndarray, p_thre: floa
 
     Parameters
     ----------
-    index_line : np.ndarray
-        A registered neuron index line.
     p_same : np.ndarray, shape (n_session, n_session). 
         The pair-wise P-same of registered neurons. If active-inactive or inactive-inactive pairs, the value is nan.
     p_thre : float, optional
@@ -62,11 +60,6 @@ def calc_register_score(index_line: np.ndarray, p_same: np.ndarray, p_thre: floa
     float
         The register score.
     """
-
-    # Only neurons being detected in more than 2 sessions are considered.
-    if len(np.where(index_line != 0)[0]) <= 1:
-        return np.nan
-    
     tri_p_same = np.triu(p_same, k=1)
     return np.where(tri_p_same >= p_thre)[0].shape[0] / np.where(tri_p_same>0)[0].shape[0]
 
@@ -132,7 +125,7 @@ if __name__ == '__main__':
     
     for i in range(index_map.shape[1]):
         index_line = index_map[:, i]
-        register_test[i] = calc_register_score(index_line, p_same[i, :, :], p_thre=0.05)
+        register_test[i] = calc_register_score(p_same[i, :, :], p_thre=0.05)
         mean_p_same[i] = calc_mean_p_same(index_line, p_same[i, :, :])
     
     res = {"real": exclusivity_score, "test": register_test, "register_score": register_score, "mean p": mean_p_same}
