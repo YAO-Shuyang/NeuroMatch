@@ -77,14 +77,24 @@ class PSameList(object):
         self.p_thre = p_thre
         self.get_values()
             
-    def __getitem__(self, index: int | tuple[int, int, int]) -> PSame:
+    def __getitem__(self, index: int | tuple[int, int] | tuple[int, int, int]) -> PSame:
         if isinstance(index, int):
             return self.content[index]
-        elif isinstance(index, tuple):
+        elif isinstance(index, tuple) and len(index) == 2:
+            i, j = index
+            return self.content[i][j]
+        elif isinstance(index, tuple) and len(index) == 3:
             neuron_id, i, j = index
             return self.content[neuron_id][i, j]
         else:
             raise TypeError("index must be int or tuple[int, int, int].")
+        
+    @property
+    def shape(self):
+        if len(self.content) == 0:
+            return (0, )
+        else:
+            return (len(self.content), self.content[0].shape[0], self.content[0].shape[1])
             
     def __len__(self):
         return len(self.content)

@@ -144,8 +144,8 @@ def read_exclusivity_score(dir_name: str, open_type = 'h5py') -> np.ndarray:
     else:
         raise ValueError("open type should be 'h5py' or 'scipy'")
     
-def read_p_same(dir_name: str, open_type = 'h5py', p_thre: float = 0.5) -> PSameList:
-    """read_p_same: Read the pair-wise P-same probability from the MATLAB file saved by CellReg.
+def read_psame(dir_name: str, open_type = 'h5py', p_thre: float = 0.5) -> PSameList:
+    """read_psame: Read the pair-wise P-same probability from the MATLAB file saved by CellReg.
 
     Parameters
     ----------
@@ -191,13 +191,15 @@ def read_p_same(dir_name: str, open_type = 'h5py', p_thre: float = 0.5) -> PSame
     else:
         raise ValueError("open type should be 'h5py' or 'scipy'")
 
-def read_matlab_data(reference, file):
+def read_matlab_data(reference, file, dtype: str = 'int'):
     """
     Recursively read data from an HDF5 reference in a MATLAB file.
 
     Parameters:
     reference (h5py.Reference): HDF5 reference to a dataset or a group.
     file (h5py.File): HDF5 file object.
+    dtype (str): Data type of the data to be read.
+        By default, 'int'. Other options: 'float'.
 
     Returns:
     data: The data stored in the dataset or group.
@@ -207,13 +209,16 @@ def read_matlab_data(reference, file):
 
     # If the object is a dataset, return its contents
     if isinstance(obj, h5py.Dataset):
-        if obj[()].shape[0] == 2:
+        temp = obj[()]
+        if temp.shape[0] == 2:
             return []
         
-        if isinstance(obj[()], np.ndarray) and (obj[()].dtype == np.int64 or obj[()].dtype == np.float64):
-            return obj[()].astype(np.int64)[0]
+        if isinstance(temp, np.ndarray) and (temp.dtype == np.int64 or temp.dtype == np.float64) and dtype == 'int':
+            return temp.astype(np.int64)[0]
+        elif isinstance(temp, np.ndarray) and (temp.dtype == np.int64 or temp.dtype == np.float64) and dtype == 'float':
+            return temp.astype(np.float64).T[0]
         else:
-            return obj[()]
+            return temp
     # If the object is a group (like a MATLAB cell), read its contents recursively
     elif isinstance(obj, h5py.Group):
         return [read_matlab_data(ref, file) for ref in obj]  
@@ -258,7 +263,7 @@ def read_all_to_all_indexes(
 
             for i, ref in enumerate(dataset_a):
                 # Iterate for n_sessions. Set session i as reference session.
-                all_to_all_oneday = read_matlab_data(ref[0], f)
+                all_to_all_oneday = read_matlab_data(ref[0], f, dtype='int')
                 # Length of nested_data: n_neuron
                 sessions_wise_data = []
                 for session_ref in all_to_all_oneday:
@@ -268,7 +273,7 @@ def read_all_to_all_indexes(
                         # Iterates for n_neuron times, dereference each neuron's potential partners.
 
                         # Further dereference if the data contains more HDF5 references
-                        res = list(read_matlab_data(neuron_ref, f))
+                        res = list(read_matlab_data(neuron_ref, f, dtype='int'))
                         A_to_B_indexes.append(res)
                         
                     sessions_wise_data.append(A_to_B_indexes)
@@ -293,7 +298,7 @@ def read_all_to_all_psame(
         'h5py' is needed when using v7.3 signature to save the file
         'scipy' is needed when 'h5py' does not work, relating to old-version MATLAB file.
     p_model : str, optional
-        The model of p_same, by default 'spatial_correlation_model'. You could select
+        The model of psame, by default 'spatial_correlation_model'. You could select
         'centroid_distance_model' as well.
             
     Returns
@@ -320,7 +325,7 @@ def read_all_to_all_psame(
 
             for i, ref in enumerate(dataset_a):
                 # Iterate for n_sessions. Set session i as reference session.
-                all_to_all_oneday = read_matlab_data(ref[0], f)
+                all_to_all_oneday = read_matlab_data(ref[0], f, dtype='float')
                 # Length of nested_data: n_neuron
                 sessions_wise_data = []
                 for session_ref in all_to_all_oneday:
@@ -330,7 +335,7 @@ def read_all_to_all_psame(
                         # Iterates for n_neuron times, dereference each neuron's potential partners.
 
                         # Further dereference if the data contains more HDF5 references
-                        res = list(read_matlab_data(neuron_ref, f))
+                        res = list(read_matlab_data(neuron_ref, f, dtype='float'))
                         A_to_B_indexes.append(res)
                         
                     sessions_wise_data.append(A_to_B_indexes)
@@ -394,6 +399,8 @@ if __name__ == '__main__':
     print(time.time() - t1)
     # Examine the memory taken by 
     print(sys.getsizeof(a))
+    print(a[0, 1, 0])
+
     
     # Test
     """    
@@ -408,7 +415,7 @@ if __name__ == '__main__':
     exclusivity_score = read_exclusivity_score(dir_name)
     print("exclusivity_score:", type(exclusivity_score), exclusivity_score.shape)
     
-    p_same = read_p_same(dir_name)
-    print("p_same:", type(p_same), p_same.shape)
+    psame = read_psame(dir_name)
+    print("psame:", type(psame), psame.shape)
     """
-    
+
