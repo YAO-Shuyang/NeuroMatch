@@ -27,6 +27,7 @@ class IndexMap(object):
     
     def __setitem__(self, index: int | tuple, value: int) -> int | np.ndarray:
         self.content[index] = value
+        return self.content
     
     def __getitem__(self, index: int | tuple) -> int | np.ndarray:
         return self.content[index]
@@ -62,6 +63,7 @@ class IndexMap(object):
         sorted_index_map = index_map[:, sorted_indices]
         return sorted_index_map
     
+    @property
     def shape(self):
         return self.content.shape
     

@@ -1,23 +1,25 @@
 # To define the criteria of neuron re-matching.
 import numpy as np
+from numba import jit
 
-def calc_register_score(p_same: np.ndarray, p_thre: float = 0.05) -> float:
+@jit(nopython=True)
+def calc_register_score(psame: np.ndarray, p_thre: float = 0.05) -> float:
     """calc_register_score: it is a function to calculate the register score.
     Refer to CellReg: https://doi.org/10.1016/j.celrep.2017.10.013
     and Github repository: https://github.com/zivlab/CellReg/blob/master/CellReg/compute_scores.m
     
     Briefly,
 
-        register score = 1 / N * sum(I(P_same >= p_thre)),
+        register score = 1 / N * sum(I(psame >= p_thre)),
 
     where N is the total number of active sessions, and I is the indicator function, whose value
-    is 1 if P_same >= p_thre, and 0 otherwise. Sum is taken over all active-active cell 
+    is 1 if psame >= p_thre, and 0 otherwise. Sum is taken over all active-active cell 
     pairs and the result is averaged.
     
     Note
     ----
     This score will not be the same as the results computed by CellReg, cause the formular is not
-    exactly the same! Ours only uses the P_same of active-active cell pairs as the data of active-inactive
+    exactly the same! Ours only uses the psame of active-active cell pairs as the data of active-inactive
     cell pairs is not available directly from CellReg files. It more like the exclusivity score
     computed in CellReg but ours uses all the a-a pairs instead of exclusive a-a pairs only.
     
@@ -27,7 +29,7 @@ def calc_register_score(p_same: np.ndarray, p_thre: float = 0.05) -> float:
     Example
     -------
     >>> index_line = np.array([1, 2, 3, 4, 5, 6])
-    >>> p_same = np.array([[0.87, 0.94, 0.89, 0.59, 0.82, np.nan],
+    >>> psame = np.array([[0.87, 0.94, 0.89, 0.59, 0.82, np.nan],
         A = [[np.nan    0.87    0.97    np.nan  0.35    np.nan  ],
              [0.87      np.nan  0.94    0.97    0.47    np.nan  ],
              [0.97      0.94    np.nan  0.97    np.nan  0.63    ],
@@ -50,7 +52,7 @@ def calc_register_score(p_same: np.ndarray, p_thre: float = 0.05) -> float:
 
     Parameters
     ----------
-    p_same : np.ndarray, shape (n_session, n_session). 
+    psame : np.ndarray, shape (n_session, n_session). 
         The pair-wise P-same of registered neurons. If active-inactive or inactive-inactive pairs, the value is nan.
     p_thre : float, optional
         The threshold of P-same, by default 0.5
@@ -60,17 +62,21 @@ def calc_register_score(p_same: np.ndarray, p_thre: float = 0.05) -> float:
     float
         The register score.
     """
-    tri_p_same = np.triu(p_same, k=1)
-    return np.where(tri_p_same >= p_thre)[0].shape[0] / np.where(tri_p_same>0)[0].shape[0]
+    tri_psame = np.triu(psame, k=1)
+    be_div = np.where(tri_psame >= p_thre)[0].shape[0]
+    if be_div == 0:
+        return np.nan
+    else:
+        return  np.where(tri_psame >= p_thre)[0].shape[0] / be_div
 
-def calc_mean_p_same(index_line: np.ndarray, p_same: np.ndarray) -> float:
-    """calc_mean_p_same: it is a function to compute all the 
+def calc_mean_psame(index_line: np.ndarray, psame: np.ndarray) -> float:
+    """calc_mean_psame: it is a function to compute all the 
 
     Parameters
     ----------
     index_line : np.ndarray
         A registered neuron index line.
-    p_same : np.ndarray, shape (n_session, n_session). 
+    psame : np.ndarray, shape (n_session, n_session). 
         The pair-wise P-same of registered neurons. If active-inactive or inactive-inactive pairs, the value is nan.
 
     Returns
@@ -82,10 +88,10 @@ def calc_mean_p_same(index_line: np.ndarray, p_same: np.ndarray) -> float:
     if len(np.where(index_line != 0)[0]) <= 1:
         return np.nan
     
-    tri_p_same = np.triu(p_same, k=1)
-    return np.nanmean(tri_p_same[np.where(tri_p_same>0)])
+    tri_psame = np.triu(psame, k=1)
+    return np.nanmean(tri_psame[np.where(tri_psame>0)])
 
-def calc_reliability(i: int, index_line: np.ndarray, p_same: np.ndarray) -> float:
+def calc_reliability(i: int, index_line: np.ndarray, psame: np.ndarray) -> float:
     """calc_reliability: it is a function to compute the reliability that a neuron
     to be registered with other neurons.
 
@@ -95,7 +101,7 @@ def calc_reliability(i: int, index_line: np.ndarray, p_same: np.ndarray) -> floa
         The index of the neuron
     index_line : np.ndarray
         A registered neuron index line.
-    p_same : np.ndarray, shape (n_session, n_session). 
+    psame : np.ndarray, shape (n_session, n_session). 
         The pair-wise P-same of registered neurons. If active-inactive or inactive-inactive pairs, the value is nan.
 
     Returns
@@ -106,10 +112,10 @@ def calc_reliability(i: int, index_line: np.ndarray, p_same: np.ndarray) -> floa
     if index_line[i] == 0:
         return np.nan
     
-    return np.nanmean(p_same[i, :])
+    return np.nanmean(psame[i, :])
 
 if __name__ == '__main__':
-    from neuromatch.read import read_register_score, read_index_map, read_p_same, read_exclusivity_score
+    from neuromatch.read import read_register_score, read_index_map, read_psame, read_exclusivity_score
     import pandas as pd
     import  matplotlib.pyplot as plt
     
@@ -118,17 +124,17 @@ if __name__ == '__main__':
     index_map = read_index_map(dir_name)
     register_score = read_register_score(dir_name)
     exclusivity_score = read_exclusivity_score(dir_name)
-    p_same = read_p_same(dir_name=dir_name)
+    psame = read_psame(dir_name=dir_name)
     
     register_test = np.zeros(index_map.shape[1])
-    mean_p_same = np.zeros(index_map.shape[1])
+    mean_psame = np.zeros(index_map.shape[1])
     
     for i in range(index_map.shape[1]):
         index_line = index_map[:, i]
-        register_test[i] = calc_register_score(p_same[i, :, :], p_thre=0.05)
-        mean_p_same[i] = calc_mean_p_same(index_line, p_same[i, :, :])
+        register_test[i] = calc_register_score(psame[i, :, :], p_thre=0.05)
+        mean_psame[i] = calc_mean_psame(index_line, psame[i, :, :])
     
-    res = {"real": exclusivity_score, "test": register_test, "register_score": register_score, "mean p": mean_p_same}
+    res = {"real": exclusivity_score, "test": register_test, "register_score": register_score, "mean p": mean_psame}
 
     D = pd.DataFrame(res)
     D.to_excel(r"E:\Data\maze_learning\PlotFigures\STAT_CellReg\neuromatch_register_score.xlsx")
