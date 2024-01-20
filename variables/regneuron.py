@@ -24,6 +24,22 @@ def find_candidates(index_line: np.ndarray, ref_indexmaps: list[IndexMap]) -> np
 
 @jit(nopython=True)
 def get_psame(index_line: np.ndarray, all_psame: np.ndarray, candidates: np.ndarray):
+    """get_psame: get psame matrix for every index_line.
+
+    Parameters
+    ----------
+    index_line : np.ndarray, with a shape of (n_session, )
+        The index line currently being considered, whose corresponding psame will be computed.
+    all_psame : np.ndarray
+        The psame matrix of all candidates, with a shape of (n_candidates, n_candidates).
+    candidates : np.ndarray
+        The vectorized candidate matrix, with a shape of (n_candidates, 2)
+
+    Returns
+    -------
+    p_same: np.ndarray
+        The psame matrix of the index line, with a shape of (n_session, n_session).
+    """
     index = np.zeros_like(index_line, np.int64)
     for i in range(index_line.shape[0]):
         index[i] = np.where((candidates[:, 0] == index_line[i])&(candidates[:, 1] == i))[0][0]
@@ -33,19 +49,106 @@ def get_psame(index_line: np.ndarray, all_psame: np.ndarray, candidates: np.ndar
 
 @jit(nopython=True)
 def calc_pmean_score(index_line: np.ndarray, psame: np.ndarray, frac: float = 0.8):
-    return np.mean(psame[psame >= 0])*frac + (index_line.shape[0] - np.count_nonzero(index_line))/index_line.shape[0]*(1-frac)
+    """calc_pmean_score: compute a mean value to estimate the results of re-matching.
+
+    Parameters
+    ----------
+    index_line : np.ndarray
+    
+    psame : np.ndarray
+        The psame matrix of the index line, with a shape of (n_session, n_session).
+    frac : float, optional
+        The structural limitation which encourage matching for more neurons, by default 0.8
+
+    Returns
+    -------
+    float
+        The pmean score of a given index line
+    """
+    return np.mean(psame[psame >= 0])*frac + np.count_nonzero(index_line)/index_line.shape[0]*(1-frac)
 
 @jit(nopython=True)
-def iteration(index_line: np.ndarray, all_psame: np.ndarray, candidates: np.ndarray, init_value: float) -> np.ndarray:
+def iteration(
+    index_line: np.ndarray, 
+    all_psame: np.ndarray, 
+    candidates: np.ndarray, 
+    init_value: float
+) -> np.ndarray:
+    """iteration: do one iteration of re-matching
 
-    for i in range(candidates.shape[0]):
-        idx = np.where(candidates[:, 1] == i)[0][0]
+    Parameters
+    ----------
+    index_line : np.ndarray
+        The index line to be updated
+    all_psame : np.ndarray
+        vectorized psame matrix for between each two candidates.
+        With a shape of (n_candidates, n_candidates)
+    candidates : np.ndarray
+        the vecteroized candidates matrix, with a shape of (n_candidates, 2)
+    init_value : float
+        The initial value of pmean score    
+
+    Returns
+    -------
+    np.ndarray
+        The updated index line
+    """
+    max_value = init_value
+    for i in range(index_line.shape[0]):
+        idx = np.where(candidates[:, 1] == i)[0]
+        for j in idx:
+            if all_psame[i, j] > max_value:
+                index_i = index_line[i] # Save the current value and feed back if this iteration do not find a better value
+                index_line[i] = candidates[j, 0] # Update all the candidates at the index on session i+1
+                _psame = get_psame(index_line=index_line, all_psame=all_psame, candidates=candidates) # Compute the psame for the updated index map
+                _score = calc_pmean_score(index_line=index_line, psame=_psame, frac=0.8) # Compute the pmean score
+                if _score > max_value:
+                    # If the pmean score is better, update the index line
+                    max_value = _score
+                else:
+                    # If the pmean score is not better, restore the index line
+                    # and feed back the current value
+                    index_line[i] = index_i
         
-    psame = get_psame(index_line, all_psame, candidates)
-    reg_score = calc_pmean_score(index_line, psame)
-            
-    return index_line
+    return index_line, max_value
 
+@jit(nopython=True)
+def optimization(
+    index_line: np.ndarray, 
+    all_psame: np.ndarray, 
+    candidates: np.ndarray, 
+    init_value: float,
+    max_iter: int = 20
+) -> np.ndarray:
+    """optimization: Optimize the registered neuron with the found candidates
+
+    Parameters
+    ----------
+    index_line : np.ndarray
+        The initial index_line to be optimized
+    all_psame : np.ndarray
+        vectorized psame matrix for between each two candidates.
+        With a shape of (n_candidates, n_candidates)
+    candidates : np.ndarray
+        the vecteroized candidates matrix, with a shape of (n_candidates, 2)
+    init_value : float
+        The initial value of pmean score
+    max_iter : int, optional
+        The optimization is repeated until the iterations reach max_iter, by default 20
+
+    Returns
+    -------
+    np.ndarray
+        The optimized index line
+    """
+    for i in range(max_iter):
+        _index_line, init_value = iteration(index_line=index_line, all_psame=all_psame, candidates=candidates, init_value=init_value)
+        if np.sum(np.abs(_index_line - index_line)) == 0:
+            # If the results have converged, stop the optimization
+            break
+        index_line = _index_line
+    return index_line
+    
 
 class RegisteredNeuron(object):
     def __init__(
@@ -56,7 +159,8 @@ class RegisteredNeuron(object):
         ata_indexmaps: AllToAllList,
         p_thre: float = 0.5
     ) -> None:
-        self.content = index_line
+        self.content = cp.deepcopy(index_line)
+        self.ori_content = cp.deepcopy(index_line)
         self.n_session = self.content.shape[0]
         self.p_thre = p_thre
         
@@ -113,6 +217,15 @@ class RegisteredNeuron(object):
                         if np.isnan(all_psame[SA, SB]):
                             all_psame[i,j] = ata_p_sames[k, SA, SB, NA-1, np.where(np.array(ata_indexmaps[k,SA, SB, NA-1])==NB)[0][0]]
                         else:
+                            
+                            try:
+                                ata_p_sames[k, SA, SB, NA-1, np.where(np.array(ata_indexmaps[k, SA, SB, NA-1])==NB)[0][0]]
+                            except:
+                                print(2)
+                            
+                            if len(ata_p_sames[k, SA, SB, NA-1]) != len(ata_indexmaps[k, SA, SB, NA-1]):
+                                print(k, SA, SB, NA-1, ata_p_sames[k, SA, SB, NA-1], ata_indexmaps[k, SA, SB, NA-1])
+                                
                             all_psame[i, j] = max(all_psame[SA, SB], ata_p_sames[k, SA, SB, NA-1, np.where(np.array(ata_indexmaps[k, SA, SB, NA-1])==NB)[0][0]])
                     else:
                         all_psame[i, j] = 0
@@ -123,7 +236,7 @@ class RegisteredNeuron(object):
         self.psame = get_psame(self.content, self.all_psame, self._uniq_candidates)
     
     def _init_score(self):
-        self.value = calc_register_score(self.psame, self.p_thre)
+        self.value = calc_pmean_score(self.psame, self.p_thre)
         
     def _find_candidates(self, ref_indexmaps: list[IndexMap]):
         """find_candidates: Get a candidate stack for further process.
@@ -151,7 +264,7 @@ class RegisteredNeuron(object):
             
         self._uniq_candidates = self._vectorize_candidates(uniq_candidates)
         
-    def optimize(self, index_map: IndexMap, max_iter: int = 20):
+    def optimize(self, max_iter: int = 20) -> np.ndarray:
         """optimize: Optimize the registered neuron with the found candidates
 
         Parameters
@@ -166,23 +279,33 @@ class RegisteredNeuron(object):
             The optimization is repeated until the iterations reach max_iter, or 
             the result converges. 
         """
+        self.opt_content = optimization(
+            index_line=cp.deepcopy(self.content),
+            all_psame=self.all_psame,
+            candidates=self._uniq_candidates,
+            init_value=cp.deepcopy(self.value),
+            max_iter=max_iter
+        )
+        return self.opt_content
         
-    def get_remove_loss(self, prev_index_map: RegisteredNeuron, ):
-        
-        
-    
         
 if __name__ == "__main__":
-    from neuromatch.read import read_index_map
+    from neuromatch.read import read_index_map, read_all_to_all_psame, read_all_to_all_indexes
     
+    model_dir = r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Cell_reg\modeled_data_struct.mat"
     index_map = read_index_map(r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Cell_reg\cellRegistered.mat")
     
-    ref_indexmaps = [read_index_map(dir_name) for dir_name in [
+    print(index_map[:, 2])
+    
+    ref_dirs = [
         r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Ref "+str(i)+r"\cellRegistered.mat" for i in [1, 4, 7, 10, 15, 17, 20, 23, 26]
-    ]]
+    ]
+    ref_model_dir = [
+        r"E:\Data\Cross_maze\10227\Super Long-term Maze 1\Ref "+str(i)+r"\modeled_data_struct.mat" for i in [1, 4, 7, 10, 15, 17, 20, 23, 26]
+    ]
     
-    index_map.sort()
-    idx = 32
+    #ref_indexmaps = [read_index_map(dir_name) for dir_name in ref_dirs]
+    #ata_p_sames = [read_all_to_all_psame(dir_name) for dir_name in [model_dir]+ref_model_dir]
+    #ata_indexmaps = [read_all_to_all_indexes(dir_name) for dir_name in [model_dir]+ref_model_dir]
     
-    print(index_map[:, 32])
-    find_candidates(index_map[:, 32], ref_indexmaps)
+    RegisteredNeuron()
