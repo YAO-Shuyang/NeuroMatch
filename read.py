@@ -210,8 +210,6 @@ def read_matlab_data(reference, file, dtype: str = 'int'):
     # If the object is a dataset, return its contents
     if isinstance(obj, h5py.Dataset):
         temp = obj[()]
-        if temp.shape[0] == 2:
-            return []
         
         if isinstance(temp, np.ndarray) and (temp.dtype == np.int64 or temp.dtype == np.float64) and dtype == 'int':
             return temp.astype(np.int64)[0]
