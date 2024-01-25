@@ -4,11 +4,13 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import logging
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton
 from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QTableWidget
 from PyQt6.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox
 from PyQt6.QtWidgets import QInputDialog, QLineEdit, QSpinBox, QLabel
+from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtCore import Qt, QModelIndex, QTimer
 from PyQt6.QtGui import QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -40,6 +42,7 @@ class NeuroMatchGUI(QMainWindow):
         self.sour_content = None
         self.plot_range = None
         self._row, self._col = None, None
+        self.log_name = None
 
         # Create buttons
         loadPklButton = QPushButton("Load PKL File")
@@ -48,6 +51,9 @@ class NeuroMatchGUI(QMainWindow):
         loadXlsxButton.clicked.connect(self.loadXlsxFile)
         loadDataButton = QPushButton("Load Data")
         loadDataButton.clicked.connect(self.loadData)
+        loadLogDirButton = QPushButton("Select Directory")
+        loadLogDirButton.clicked.connect(self.configureLogger)
+        
         RunButton = QPushButton("Run")
         RunButton.clicked.connect(self.run)
         PlotButton = QPushButton("Plot")
@@ -58,12 +64,15 @@ class NeuroMatchGUI(QMainWindow):
         FillButton.clicked.connect(self.fill)
         ReplaceButton = QPushButton("Replace")
         ReplaceButton.clicked.connect(self.replace)
+        MoveOutButton = QPushButton("Move Out")
+        MoveOutButton.clicked.connect(self.moveOut)
         AdoptButton = QPushButton("Adopt")
         AdoptButton.clicked.connect(self.adopt)
         
         ChangeButtonLayout = QHBoxLayout()
         ChangeButtonLayout.addWidget(FillButton)
         ChangeButtonLayout.addWidget(ReplaceButton)
+        ChangeButtonLayout.addWidget(MoveOutButton)
         ChangeButtonLayout.addWidget(AdoptButton)
         
         # save
@@ -79,6 +88,8 @@ class NeuroMatchGUI(QMainWindow):
         self.xlsxFilePathLineEdit.setReadOnly(True)  # Make it read-only
         self.dataFilePathLineEdit = QLineEdit()
         self.dataFilePathLineEdit.setReadOnly(True)  # Make it read-only
+        self.selectFileDirectoryLineEdit = QLineEdit()
+        self.selectFileDirectoryLineEdit.setReadOnly(True)  # Make it read-only
         
         # Add a spin box for selecting rows
         RowReminder = QLabel("Row to be optimized:")
@@ -96,6 +107,9 @@ class NeuroMatchGUI(QMainWindow):
         LoadDataLayout = QHBoxLayout()
         LoadDataLayout.addWidget(loadDataButton)
         LoadDataLayout.addWidget(self.dataFilePathLineEdit)
+        SelectFileLayout = QHBoxLayout()
+        SelectFileLayout.addWidget(loadLogDirButton)
+        SelectFileLayout.addWidget(self.selectFileDirectoryLineEdit)
         
         # RunLayout
         runLayout = QHBoxLayout()
@@ -108,6 +122,7 @@ class NeuroMatchGUI(QMainWindow):
         Leftlayout.addLayout(LoadPKLLayout)
         Leftlayout.addLayout(LoadXLSXLayout)
         Leftlayout.addLayout(LoadDataLayout)
+        Leftlayout.addLayout(SelectFileLayout)
         Leftlayout.addLayout(runLayout)
         Leftlayout.addLayout(ChangeButtonLayout)
         
@@ -151,6 +166,23 @@ class NeuroMatchGUI(QMainWindow):
     def clearOptContent(self):
         self.opt_content = None
 
+    def configureLogger(self):
+        # Open a directory dialog to select a directory
+        dir_name = QFileDialog.getExistingDirectory(self, "Select Directory")
+        if dir_name:
+            try:
+                self.selectFileDirectoryLineEdit.setText(dir_name)
+                file_name = os.path.join(dir_name,'neuromatch_gui.log')
+
+                logging.basicConfig(filename=file_name, level=logging.INFO,
+                            format='%(asctime)s - %(levelname)s - %(message)s')
+                # You can now process files in the directory as needed
+                self.log_name = dir_name
+            except Exception as e:
+                QMessageBox.critical(self, "Directory Load Error", f"An error occurred: {e}")
+            
+        
+
     def loadPklFile(self):
         # Open a file dialog to select the .pkl file
         file_name, _ = QFileDialog.getOpenFileName(self, "Open PKL File", "", "Pickle Files (*.pkl)")
@@ -161,6 +193,7 @@ class NeuroMatchGUI(QMainWindow):
                     print(f"{file_name} is loaded successfully!")
                 self.pklFilePathLineEdit.setText(file_name)
                 QMessageBox.information(self, "File Load", "PKL file loaded successfully.")
+                logging.info(f"CellReg Ref Data:\n    {file_name}")
             except Exception as e:
                 QMessageBox.critical(self, "File Load Error", f"An error occurred: {e}")
                 
@@ -176,6 +209,7 @@ class NeuroMatchGUI(QMainWindow):
                 QMessageBox.information(self, "File Load", "PKL file loaded successfully.")
                 self._init_data()
                 print("  Finish linearized trajectories")
+                logging.info(f"Imaging Data:\n    {file_name}")
             except Exception as e:
                 QMessageBox.critical(self, "File Load Error", f"An error occurred: {e}")     
                 
@@ -220,6 +254,7 @@ class NeuroMatchGUI(QMainWindow):
                     print(f"{file_name} is loaded successfully!")
                     self._ori_n = self.df.shape[0] # The original length of the excel sheet.
                     self.setupAutoSaveTimer()
+                    logging.info(f"Excel Data:\n    {file_name}, with initial shape {self.df.shape}, and title: {self.df_titles}")
                     
             except Exception as e:
                 QMessageBox.critical(self, "File Load Error", f"An error occurred: {e}")
@@ -252,6 +287,8 @@ class NeuroMatchGUI(QMainWindow):
         if is_comparison and self.opt_content is not None:
             row_data = self.df.iloc[index]
             self.tableWidget.setRowCount(self.df.shape[1])
+            for i in range(self.df.shape[1]):
+                self.tableWidget.setRowHeight(i, 20)
             self.tableWidget.setColumnCount(4)
             self.tableWidget.setColumnWidth(0, 60)
             self.tableWidget.setColumnWidth(1, 60)
@@ -263,7 +300,9 @@ class NeuroMatchGUI(QMainWindow):
             newfound_idx = np.where((self.ori_content - self.opt_content != 0)&(self.ori_content == 0))[0]
             adjusted_idx = np.where((self.ori_content - self.opt_content != 0)&(self.ori_content != 0))[0]
             for j in range(self.df.shape[1]):
-                item_value = str(int(row_data.iloc[j]))
+                if np.isnan(self.df.iloc[index, j]):
+                    self.df.iloc[index, j] = 0
+                item_value = str(int(self.df.iloc[index, j]))
                 item = QTableWidgetItem(item_value)
                 if j in newfound_idx:
                     item.setBackground(QColor(255, 255, 224)) # light yellow
@@ -288,16 +327,21 @@ class NeuroMatchGUI(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tableWidget.setItem(self.opt_content.shape[0], 1, item)
         else:
-            row_data = self.df.iloc[index]
+            # row_data = self.df.iloc[index]
             self.tableWidget.setRowCount(self.df.shape[1])
+            for i in range(self.df.shape[1]):
+                self.tableWidget.setRowHeight(i, 20)
             self.tableWidget.setColumnCount(1)
             self.tableWidget.setColumnWidth(0, 60)
             self.tableWidget.setVerticalHeaderLabels(self.df.columns.astype(str))
             self.tableWidget.setHorizontalHeaderLabels(["Original"])
 
             self.ori_content = self.df.iloc[index, :len(self.df_titles)].values.astype(np.int64)
+            self.df.iloc[index, self.df_titles.shape[0]] = np.count_nonzero(self.ori_content)
             for j in range(self.df.shape[1]):
-                item_value = str(int(row_data.iloc[j]))
+                if np.isnan(self.df.iloc[index, j]):
+                    self.df.iloc[index, j] = 0
+                item_value = str(int(self.df.iloc[index, j]))
                 item = QTableWidgetItem(item_value)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.tableWidget.setItem(j, 0, item)
@@ -326,12 +370,17 @@ class NeuroMatchGUI(QMainWindow):
     
     def onTableCellClicked(self, qindex: QModelIndex):
         row, column = qindex.row(), qindex.column()
-        
+        self._row, self._col = row, column
         if column != 1:
             return
-        self._row, self._col = row, column
         
-        index = np.where(self.df[self.df_titles[row]] == self.opt_content[row])[0][0]
+        
+        try:
+            index = np.where(self.df.iloc[:, row] == self.opt_content[row])[0][0]
+        except Exception as e:
+            QMessageBox.critical(self, "Index Error", f"An error occurred: {e}. \n This error was raised when {self.opt_content[row]} could not be found in column {row}, entitled {self.df_titles[row]}")
+            return
+            
         self.sour_content = self.df.iloc[index, :len(self.df_titles)].values.astype(np.int64)
         print(f" Click on Item {row}, {column}, with value {self.sour_content[row]}")
         newfound_idx = np.where((self.ori_content - self.opt_content != 0)&(self.ori_content == 0))[0]
@@ -353,6 +402,7 @@ class NeuroMatchGUI(QMainWindow):
                 
     def getDatesRange(self, qindex: QModelIndex):
         row, column = qindex.row(), qindex.column()
+        self._row, self._col = row, column
         
         if row + 3 >= len(self.df_titles):
             self.plot_range = np.arange(len(self.df_titles)-7, len(self.df_titles)) if len(self.df_titles)-7 >= 0 else np.arange(len(self.df_titles))
@@ -372,19 +422,19 @@ class NeuroMatchGUI(QMainWindow):
         
         if self.ori_content is not None:
             LocTimeCurve(self.data, self.ori_axes, self.plot_range, self.ori_content[self.plot_range],
-                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'black'},
+                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'gray'},
                          bar_kwargs={'markeredgewidth': 1, 'markersize': 4})
             self.FigOriCanvas.draw()
             print("Plotting:", self.ori_content[self.plot_range])
         if self.opt_content is not None:
             LocTimeCurve(self.data, self.opt_axes, self.plot_range, self.opt_content[self.plot_range],
-                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'black'},
+                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'gray'},
                          bar_kwargs={'markeredgewidth': 1, 'markersize': 4})
             self.FigOptCanvas.draw()
             print("Plotting:", self.opt_content[self.plot_range])
         if self.sour_content is not None:
             LocTimeCurve(self.data, self.sour_axes, self.plot_range, self.sour_content[self.plot_range],
-                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'black'},
+                         line_kwargs = {'markeredgewidth': 0, 'markersize': 0.8, 'color': 'gray'},
                          bar_kwargs={'markeredgewidth': 1, 'markersize': 4})
             self.FigSourCanvas.draw()
             print("Plotting:", self.sour_content[self.plot_range])
@@ -396,25 +446,40 @@ class NeuroMatchGUI(QMainWindow):
         if self.opt_content is None:
             return
         
-        
         i, j = self.rowSelectSpinBox.value(), self._row
         
         reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to fill the vacancy at row {j} with Cell {self.opt_content[j]}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
         if reply:
+            index = np.where(self.df.iloc[:, j] == self.opt_content[j])[0][0]
+            if index == i:
+                return     
+            
+            if self.df.iloc[i, j] != 0:
+                QMessageBox.information(self, "Update Warning", "Please push button Replace in this case.")
+                return
+            
+            logging.info(f"Excel Row {i} was adopted a change, on Session {j+1}: {self.df_titles[j]}")
+            logging.info(f"    Original: {self.ori_content}")
+            logging.info(f"    Optimized: {self.opt_content}")
+            logging.info(f"    Changes: {0} was filled with Cell {self.opt_content[j]}")
+            logging.info(f"  - Excel Row {index} was coordinately changed by deleting the Cell {self.opt_content[j]}")
+            logging.info(f"    from {self.df.iloc[index, :len(self.df_titles)].astype(int)}\n\n")
+            
             print(f"fill the vacancy at row {j} with Cell {self.opt_content[j]}")
-            index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
-            self.df.loc[index, j] = 0
-            self.df.loc[i, j] = self.opt_content[j]
+            
+            self.df.iloc[index, j] = 0
+            self.df.iloc[i, j] = self.opt_content[j]
             item_value = str(int(self.opt_content[j]))
             item = QTableWidgetItem(item_value)
             item.setBackground(QColor(255, 182, 193)) # light red
 
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tableWidget.setItem(j, 0, item)
-            
+
         self._row, self._col = None, None
+        print("Fill Sucess.")
             
     
     def replace(self):
@@ -432,6 +497,22 @@ class NeuroMatchGUI(QMainWindow):
         if reply:
             print(f"replace the Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}")
             index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
+            
+            if self.df.iloc[i, j] == 0:
+                QMessageBox.information(self, "Update Warning", "Please push button Fill in this case.")
+                return
+            
+            if index == i:
+                return            
+            
+            logging.info(f"Excel Row {i} was adopted a change, on Session {j+1}: {self.df_titles[j]}")
+            logging.info(f"    Original: {self.ori_content}")
+            logging.info(f"    Optimized: {self.opt_content}")
+            logging.info(f"    Changes: {self.ori_content[j]} was replaced by Cell {self.opt_content[j]}")
+            logging.info(f"  - Excel Row {index} was coordinately changed by deleting the Cell {self.opt_content[j]}")
+            logging.info(f"    from {self.df.iloc[index, :len(self.df_titles)].astype(int)}")
+            logging.info(f"  - Replaced Cell {self.ori_content[j]} was moved to line {self._ori_n}:")
+            
             self.df.iloc[index, j] = 0
             self.df.iloc[i, j] = self.opt_content[j]
             item_value = str(int(self.opt_content[j]))
@@ -456,8 +537,62 @@ class NeuroMatchGUI(QMainWindow):
             self.df.iloc[self._ori_n, self.df_titles.shape[0]] = np.count_nonzero(self.df.iloc[self._ori_n, :self.df_titles.shape[0]])
             item = QTableWidgetItem(str(int(self.df.iloc[self._ori_n, self.df_titles.shape[0]])))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.tableWidget.setItem(k, 3, item)            
+            self.tableWidget.setItem(self.df_titles.shape[0], 3, item)            
+            logging.info(f"      {self.df.iloc[self._ori_n, :len(self.df_titles)]}\n\n")
         self._row, self._col = None, None
+        print("Replace Sucess.")
+    
+    def moveOut(self):
+        if self._row is None or self._col is None:
+            return
+        
+        if self.opt_content is None:
+            return
+        
+        i, j = self.rowSelectSpinBox.value(), self._row
+        
+        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to Move out Cell {self.ori_content[j]} at row {j}?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+        if reply:
+            print(f"Move out the Cell {self.ori_content[j]} at row {j}")
+            
+            if self.df.iloc[i, j] == 0:
+                QMessageBox.information(self, "Update Warning", f"There's nothing to move out at row {i}")
+                return          
+            
+            logging.info(f"Excel Row {i} was adopted a change, on Session {j+1}: {self.df_titles[j]}")
+            logging.info(f"    Original: {self.ori_content}")
+            logging.info(f"    Optimized: {self.opt_content}")
+            logging.info(f"    Changes: {self.ori_content[j]} was moved out")
+            
+            self.df.iloc[i, j] = 0
+            item_value = str(0)
+            item = QTableWidgetItem(item_value)
+            item.setBackground(QColor(173, 216, 230)) # light blue
+
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.tableWidget.setItem(j, 0, item)
+            
+            new_row = {}
+            for tit in self.df_titles:
+                new_row[tit] = 0
+            self.df = self.df.append(new_row, ignore_index=True)
+            self.df.iloc[self._ori_n, j] = self.ori_content[j]
+            for k in range(self.df_titles.shape[0]):
+                if np.isnan(self.df.iloc[self._ori_n, k]):
+                    self.df.iloc[self._ori_n, k] = 0
+
+                item = QTableWidgetItem(str(int(self.df.iloc[self._ori_n, k])))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.tableWidget.setItem(k, 3, item)
+            self.df.iloc[self._ori_n, self.df_titles.shape[0]] = np.count_nonzero(self.df.iloc[self._ori_n, :self.df_titles.shape[0]])
+            item = QTableWidgetItem(str(int(self.df.iloc[self._ori_n, self.df_titles.shape[0]])))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.tableWidget.setItem(self.df_titles.shape[0], 3, item)            
+            logging.info(f"      {self.df.iloc[self._ori_n, :len(self.df_titles)]}\n\n")
+        self._row, self._col = None, None
+        print("Move out Sucess.")
     
     def adopt(self):
         self._ori_n = self.df.shape[0]
@@ -475,15 +610,19 @@ class NeuroMatchGUI(QMainWindow):
         # Set up a timer to trigger every 5 minutes (300000 milliseconds)
         self.autoSaveTimer = QTimer(self)
         self.autoSaveTimer.timeout.connect(self.autoSaveData)
-        self.autoSaveTimer.start(300000)
+        self.autoSaveTimer.start(180000)
         
     def autoSaveData(self):
         self.save(is_autosave=True)
 
     def save(self, is_autosave: bool = False):
+        if self.log_name is None:
+            QMessageBox.information(self, "File Save", "Please select a directory first!")
+            return
+        
         try:
             self.df.to_excel(os.path.join(os.path.dirname(self._excel_dirname), "neuromatch_res.xlsx"), sheet_name='data', index=False)
-            index_map = [self.df.loc[:, day] for day in self.df_titles]
+            index_map = [self.df.iloc[:, i] for i in range(self.df_titles.shape[0])]
             index_map = np.vstack(index_map)
             with open(os.path.join(os.path.dirname(self._excel_dirname), "neuromatch_res.pkl"), 'wb') as f:
                 pickle.dump(index_map, f)
