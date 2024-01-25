@@ -451,7 +451,7 @@ class NeuroMatchGUI(QMainWindow):
         reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to fill the vacancy at row {j} with Cell {self.opt_content[j]}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
-        if reply:
+        if reply == QMessageBox.StandardButton.Yes:
             index = np.where(self.df.iloc[:, j] == self.opt_content[j])[0][0]
             if index == i:
                 return     
@@ -494,7 +494,7 @@ class NeuroMatchGUI(QMainWindow):
         reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to replace Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
-        if reply:
+        if reply == QMessageBox.StandardButton.Yes:
             print(f"replace the Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}")
             index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
             
@@ -554,7 +554,7 @@ class NeuroMatchGUI(QMainWindow):
         reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to Move out Cell {self.ori_content[j]} at row {j}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
-        if reply:
+        if reply == QMessageBox.StandardButton.Yes:
             print(f"Move out the Cell {self.ori_content[j]} at row {j}")
             
             if self.df.iloc[i, j] == 0:
