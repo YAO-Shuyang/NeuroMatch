@@ -68,6 +68,8 @@ class NeuroMatchGUI(QMainWindow):
         MoveOutButton.clicked.connect(self.moveOut)
         AdoptButton = QPushButton("Adopt")
         AdoptButton.clicked.connect(self.adopt)
+        ManualChangeButton = QPushButton("Change")
+        ManualChangeButton.clicked.connect(self.manualChange)
         
         ChangeButtonLayout = QHBoxLayout()
         ChangeButtonLayout.addWidget(FillButton)
@@ -132,6 +134,7 @@ class NeuroMatchGUI(QMainWindow):
         self.tableWidget.clicked.connect(self.onTableCellClicked)
         self.tableWidget.clicked.connect(self.getDatesRange)
         Leftlayout.addWidget(self.tableWidget)
+        Leftlayout.addWidget(ManualChangeButton)
         Leftlayout.addWidget(ViewButton)
         Leftlayout.addWidget(SaveButton)
         
@@ -271,7 +274,7 @@ class NeuroMatchGUI(QMainWindow):
             self.rowSelectSpinBox.setMaximum(self.df.shape[0] - 1)
         """Update the row selection spin box with the number of rows in the DataFrame."""
 
-    def displaySelectedRow(self, is_comparison: bool = False):
+    def displaySelectedRow(self, is_comparison: bool = False, is_newtable: bool = True):
         """Display the selected row in the table widget."""
         index = self.rowSelectSpinBox.value()
         if self.df is None or self.df_titles is None:
@@ -285,18 +288,20 @@ class NeuroMatchGUI(QMainWindow):
         self.plot_range = None
         
         if is_comparison and self.opt_content is not None:
-            row_data = self.df.iloc[index]
-            self.tableWidget.setRowCount(self.df.shape[1])
-            for i in range(self.df.shape[1]):
-                self.tableWidget.setRowHeight(i, 20)
-            self.tableWidget.setColumnCount(4)
-            self.tableWidget.setColumnWidth(0, 60)
-            self.tableWidget.setColumnWidth(1, 60)
-            self.tableWidget.setColumnWidth(2, 60)
-            self.tableWidget.setColumnWidth(3, 60)
-            self.tableWidget.setVerticalHeaderLabels(self.df.columns.astype(str))
-            self.tableWidget.setHorizontalHeaderLabels(np.array(["Origi.", "Optim.", "Source", "Replace"]))
+            if is_newtable:
+                self.tableWidget.setRowCount(self.df.shape[1])
+                for i in range(self.df.shape[1]):
+                    self.tableWidget.setRowHeight(i, 20)
+                self.tableWidget.setColumnCount(4)
+                self.tableWidget.setColumnWidth(0, 60)
+                self.tableWidget.setColumnWidth(1, 60)
+                self.tableWidget.setColumnWidth(2, 60)
+                self.tableWidget.setColumnWidth(3, 60)
+                self.tableWidget.setVerticalHeaderLabels(self.df.columns.astype(str))
+                self.tableWidget.setHorizontalHeaderLabels(np.array(["Origi.", "Optim.", "Source", "Replace"]))
 
+            self.ori_content = self.df.iloc[index, :len(self.df_titles)].values.astype(np.int64)
+            self.df.iloc[index, self.df_titles.shape[0]] = np.count_nonzero(self.ori_content)
             newfound_idx = np.where((self.ori_content - self.opt_content != 0)&(self.ori_content == 0))[0]
             adjusted_idx = np.where((self.ori_content - self.opt_content != 0)&(self.ori_content != 0))[0]
             for j in range(self.df.shape[1]):
@@ -351,18 +356,29 @@ class NeuroMatchGUI(QMainWindow):
             QMessageBox.warning(self, "Run Error", f"Please select a row first.")
             return
         
-        reg_neuron = RegisteredNeuron(
-            index_line=self.ori_content, 
-            ref_indexmaps=self.ref_indexmaps,
-            ata_p_sames=AllToAllList(self.ata_p_sames), 
-            ata_indexmaps=AllToAllList(self.ata_indexmaps)
-        )
-        print(f"Row {self.rowSelectSpinBox.value()}")
-        print(reg_neuron.ori_content)
-        reg_neuron.optimize()
-        self.opt_content = reg_neuron.opt_content
-        print(reg_neuron.opt_content)
-        self.displaySelectedRow(is_comparison=True)
+        
+        index = self.rowSelectSpinBox.value()
+        self.ori_content = self.df.iloc[index, :len(self.df_titles)].values.astype(np.int64)
+        
+        if np.where(self.ori_content!= 0)[0].shape[0] <= 1:
+            QMessageBox.warning(self, "Warning", f"Cannot compute optimized neuron pair because there's only 1 neuron!")
+            return
+        
+        try:
+            reg_neuron = RegisteredNeuron(
+                index_line=self.ori_content, 
+                ref_indexmaps=self.ref_indexmaps,
+                ata_p_sames=AllToAllList(self.ata_p_sames), 
+                ata_indexmaps=AllToAllList(self.ata_indexmaps)
+            )
+            print(f"Row {self.rowSelectSpinBox.value()}")
+            print(reg_neuron.ori_content)
+            reg_neuron.optimize()
+            self.opt_content = reg_neuron.opt_content
+            print(reg_neuron.opt_content)
+            self.displaySelectedRow(is_comparison=True)
+        except Exception as e:
+            QMessageBox.warning(self, "Error During Optimizing", f"An error was thrown: {e}. Most likely because of division by zero.")
 
     def displaySourceRow(self):
         if self.sour_content is None:
@@ -372,6 +388,9 @@ class NeuroMatchGUI(QMainWindow):
         row, column = qindex.row(), qindex.column()
         self._row, self._col = row, column
         if column != 1:
+            return
+        
+        if self._row >= self.df_titles.shape[0]:
             return
         
         
@@ -403,6 +422,9 @@ class NeuroMatchGUI(QMainWindow):
     def getDatesRange(self, qindex: QModelIndex):
         row, column = qindex.row(), qindex.column()
         self._row, self._col = row, column
+
+        if self._row >= self.df_titles.shape[0]:
+            return
         
         if row + 3 >= len(self.df_titles):
             self.plot_range = np.arange(len(self.df_titles)-7, len(self.df_titles)) if len(self.df_titles)-7 >= 0 else np.arange(len(self.df_titles))
@@ -446,11 +468,15 @@ class NeuroMatchGUI(QMainWindow):
         if self.opt_content is None:
             return
         
+        if self._row >= self.df_titles.shape[0]:
+            QMessageBox.warning(self, "Operation Warning", f"Please click on a valid item to identify where position wanted to fill, instead of row {self._row+1}.")
+            return
+        
         i, j = self.rowSelectSpinBox.value(), self._row
         
-        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to fill the vacancy at row {j} with Cell {self.opt_content[j]}?",
+        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to fill the vacancy at row {j+1} with Cell {self.opt_content[j]}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
+                                     QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:
             index = np.where(self.df.iloc[:, j] == self.opt_content[j])[0][0]
             if index == i:
@@ -477,8 +503,8 @@ class NeuroMatchGUI(QMainWindow):
 
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tableWidget.setItem(j, 0, item)
+            self.displaySelectedRow(is_comparison=True, is_newtable=False)
 
-        self._row, self._col = None, None
         print("Fill Sucess.")
             
     
@@ -489,11 +515,15 @@ class NeuroMatchGUI(QMainWindow):
         if self.opt_content is None:
             return
         
+        if self._row >= self.df_titles.shape[0]:
+            QMessageBox.warning(self, "Operation Warning", f"Please click on a valid item to identify where position wanted to fill, instead of row {self._row+1}.")
+            return
+        
         i, j = self.rowSelectSpinBox.value(), self._row
         
-        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to replace Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}?",
+        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to replace Cell {self.ori_content[j]} at row {j+1} with Cell {self.opt_content[j]}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
+                                     QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:
             print(f"replace the Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}")
             index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
@@ -505,7 +535,7 @@ class NeuroMatchGUI(QMainWindow):
             if index == i:
                 return            
             
-            logging.info(f"Excel Row {i} was adopted a change, on Session {j+1}: {self.df_titles[j]}")
+            logging.info(f"Excel Row {i+1} was adopted a change, on Session {j+1}: {self.df_titles[j]}")
             logging.info(f"    Original: {self.ori_content}")
             logging.info(f"    Optimized: {self.opt_content}")
             logging.info(f"    Changes: {self.ori_content[j]} was replaced by Cell {self.opt_content[j]}")
@@ -539,21 +569,27 @@ class NeuroMatchGUI(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tableWidget.setItem(self.df_titles.shape[0], 3, item)            
             logging.info(f"      {self.df.iloc[self._ori_n, :len(self.df_titles)]}\n\n")
-        self._row, self._col = None, None
+            
+            self.displaySelectedRow(is_comparison=True, is_newtable=False)
+
         print("Replace Sucess.")
     
-    def moveOut(self):
+    def moveOut(self, i = None, j = None):
         if self._row is None or self._col is None:
             return
         
         if self.opt_content is None:
             return
         
+        if self._row >= self.df_titles.shape[0]:
+            QMessageBox.warning(self, "Operation Warning", f"Please click on a valid item to identify where position wanted to fill, instead of row {self._row+1}.")
+            return
+        
         i, j = self.rowSelectSpinBox.value(), self._row
         
-        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to Move out Cell {self.ori_content[j]} at row {j}?",
+        reply = QMessageBox.question(self, "Confirm Action", f"Are you sure to Move out Cell {self.ori_content[j]} at row {j+1}?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
+                                     QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:
             print(f"Move out the Cell {self.ori_content[j]} at row {j}")
             
@@ -591,8 +627,27 @@ class NeuroMatchGUI(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tableWidget.setItem(self.df_titles.shape[0], 3, item)            
             logging.info(f"      {self.df.iloc[self._ori_n, :len(self.df_titles)]}\n\n")
-        self._row, self._col = None, None
+            
+            self.displaySelectedRow(is_comparison=True, is_newtable=False)
+
         print("Move out Sucess.")
+        
+    def manualChange(self):
+        if self._row is None or self._col is None:
+            return
+        
+        if self._row >= self.df_titles.shape[0]:
+            QMessageBox.warning(self, "Operation Warning", f"Please click on a valid item to identify where position wanted to fill, instead of row {self._row+1}.")
+            return
+        
+        # Open an input dialog to get a number
+        num, ok = QInputDialog.getInt(self, "Input Number", "Enter a number:")
+        if ok:
+            self.opt_content[self._row] = num
+            if self.df.iloc[self.rowSelectSpinBox.value(), self._row] == 0:
+                self.fill()
+            else:
+                self.replace()
     
     def adopt(self):
         self._ori_n = self.df.shape[0]
