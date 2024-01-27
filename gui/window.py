@@ -289,7 +289,7 @@ class NeuroMatchGUI(QMainWindow):
         
         if is_comparison and self.opt_content is not None:
             if is_newtable:
-                self.tableWidget.setRowCount(self.df.shape[1])
+                self.tableWidget.setRowCount(self.df_titles.shape[0]+2)
                 for i in range(self.df.shape[1]):
                     self.tableWidget.setRowHeight(i, 20)
                 self.tableWidget.setColumnCount(4)
@@ -333,7 +333,7 @@ class NeuroMatchGUI(QMainWindow):
             self.tableWidget.setItem(self.opt_content.shape[0], 1, item)
         else:
             # row_data = self.df.iloc[index]
-            self.tableWidget.setRowCount(self.df.shape[1])
+            self.tableWidget.setRowCount(self.df_titles.shape[0]+2)
             for i in range(self.df.shape[1]):
                 self.tableWidget.setRowHeight(i, 20)
             self.tableWidget.setColumnCount(1)
@@ -418,6 +418,10 @@ class NeuroMatchGUI(QMainWindow):
         item = QTableWidgetItem(str(np.count_nonzero(self.sour_content)))
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.tableWidget.setItem(self.sour_content.shape[0], 2, item)
+        
+        item = QTableWidgetItem(str(index))
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.tableWidget.setItem(self.sour_content.shape[0]+1, 2, item)
                 
     def getDatesRange(self, qindex: QModelIndex):
         row, column = qindex.row(), qindex.column()
@@ -478,7 +482,12 @@ class NeuroMatchGUI(QMainWindow):
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:
-            index = np.where(self.df.iloc[:, j] == self.opt_content[j])[0][0]
+            try:
+                index = np.where(self.df.iloc[:, j] == self.opt_content[j])[0][0]
+            except Exception as e:
+                QMessageBox.warning(self, "Operation Error", f"Error: {e}. Do not find {self.opt_content[j]} in row {j+1}")
+                return 
+            
             if index == i:
                 return     
             
@@ -526,7 +535,11 @@ class NeuroMatchGUI(QMainWindow):
                                      QMessageBox.StandardButton.Yes)
         if reply == QMessageBox.StandardButton.Yes:
             print(f"replace the Cell {self.ori_content[j]} at row {j} with Cell {self.opt_content[j]}")
-            index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
+            try:
+                index = np.where(self.df[self.df_titles[j]] == self.opt_content[j])[0][0]
+            except Exception as e:
+                QMessageBox.warning(self, "Operation Error", f"Error: {e}. Do not find {self.opt_content[j]} in row {j+1}")
+                return 
             
             if self.df.iloc[i, j] == 0:
                 QMessageBox.information(self, "Update Warning", "Please push button Fill in this case.")
@@ -636,13 +649,17 @@ class NeuroMatchGUI(QMainWindow):
         if self._row is None or self._col is None:
             return
         
+        if self.opt_content is None:
+            QMessageBox.warning(self, "Operation Warning", "Please run optimization first!")
+            return
+        
         if self._row >= self.df_titles.shape[0]:
             QMessageBox.warning(self, "Operation Warning", f"Please click on a valid item to identify where position wanted to fill, instead of row {self._row+1}.")
             return
         
         # Open an input dialog to get a number
         num, ok = QInputDialog.getInt(self, "Input Number", "Enter a number:")
-        if ok:
+        if ok and num is not None:
             self.opt_content[self._row] = num
             if self.df.iloc[self.rowSelectSpinBox.value(), self._row] == 0:
                 self.fill()
@@ -679,8 +696,11 @@ class NeuroMatchGUI(QMainWindow):
             self.df.to_excel(os.path.join(os.path.dirname(self._excel_dirname), "neuromatch_res.xlsx"), sheet_name='data', index=False)
             index_map = [self.df.iloc[:, i] for i in range(self.df_titles.shape[0])]
             index_map = np.vstack(index_map)
+            mat = np.where(index_map > 0, 1, 0)
+            num = np.sum(mat, axis = 0)
+            idx = np.where(num > 0)[0]
             with open(os.path.join(os.path.dirname(self._excel_dirname), "neuromatch_res.pkl"), 'wb') as f:
-                pickle.dump(index_map, f)
+                pickle.dump(index_map[:, idx], f)
             
             if is_autosave == False:
                 QMessageBox.information(self, "File Save", f"File saved successfully ({os.path.join(os.path.dirname(self._excel_dirname), 'neuromatch_res.xlsx')})")
