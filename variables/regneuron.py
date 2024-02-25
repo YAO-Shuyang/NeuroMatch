@@ -171,7 +171,7 @@ class RegisteredNeuron(object):
         ref_indexmaps: list[IndexMap], 
         ata_p_sames: AllToAllList, 
         ata_indexmaps: AllToAllList,
-        p_thre: float = 0.5
+        p_thre: float = 0.8
     ) -> None:
         self.content = cp.deepcopy(index_line)
         self.ori_content = cp.deepcopy(index_line)
