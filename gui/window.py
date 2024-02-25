@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton
 from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QTableWidget
 from PyQt6.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox
 from PyQt6.QtWidgets import QInputDialog, QLineEdit, QSpinBox, QLabel
-from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtWidgets import QFileDialog, QDoubleSpinBox
 from PyQt6.QtCore import Qt, QModelIndex, QTimer
 from PyQt6.QtGui import QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -43,6 +43,7 @@ class NeuroMatchGUI(QMainWindow):
         self.plot_range = None
         self._row, self._col = None, None
         self.log_name = None
+        self._p_thre = 0.8
 
         # Create buttons
         loadPklButton = QPushButton("Load PKL File")
@@ -99,6 +100,14 @@ class NeuroMatchGUI(QMainWindow):
         self.rowSelectSpinBox.valueChanged.connect(self.clearOptContent)
         self.rowSelectSpinBox.valueChanged.connect(self.displaySelectedRow)
         
+        # Create a double spin box for inputting a value between 0 and 1
+        self.doubleSpinBox = QDoubleSpinBox()
+        self.doubleSpinBox.setMinimum(0.0)
+        self.doubleSpinBox.setMaximum(1.0)
+        self.doubleSpinBox.setSingleStep(0.01)  # Adjust   step size as needed
+        self.doubleSpinBox.setValue(0.8)
+        self.doubleSpinBox.valueChanged.connect(self.onDoubleSpinBoxValueChanged)
+        
         # Button layout
         LoadPKLLayout = QHBoxLayout()
         LoadPKLLayout.addWidget(loadPklButton)
@@ -133,8 +142,13 @@ class NeuroMatchGUI(QMainWindow):
         self.tableWidget = QTableWidget()
         self.tableWidget.clicked.connect(self.onTableCellClicked)
         self.tableWidget.clicked.connect(self.getDatesRange)
+        PthreLabel = QLabel("para. f:")
+        paralayout = QHBoxLayout()
+        paralayout.addWidget(PthreLabel,1)
+        paralayout.addWidget(self.doubleSpinBox,1)
+        paralayout.addWidget(ManualChangeButton,2)
         Leftlayout.addWidget(self.tableWidget)
-        Leftlayout.addWidget(ManualChangeButton)
+        Leftlayout.addLayout(paralayout)
         Leftlayout.addWidget(ViewButton)
         Leftlayout.addWidget(SaveButton)
         
@@ -165,6 +179,8 @@ class NeuroMatchGUI(QMainWindow):
         centralWidget.setLayout(layout)
         self.setCentralWidget(centralWidget)
 
+    def onDoubleSpinBoxValueChanged(self):
+        self._p_thre = self.doubleSpinBox.value()
 
     def clearOptContent(self):
         self.opt_content = None
@@ -369,7 +385,8 @@ class NeuroMatchGUI(QMainWindow):
                 index_line=self.ori_content, 
                 ref_indexmaps=self.ref_indexmaps,
                 ata_p_sames=AllToAllList(self.ata_p_sames), 
-                ata_indexmaps=AllToAllList(self.ata_indexmaps)
+                ata_indexmaps=AllToAllList(self.ata_indexmaps),
+                p_thre=self._p_thre
             )
             print(f"Row {self.rowSelectSpinBox.value()}")
             print(reg_neuron.ori_content)
