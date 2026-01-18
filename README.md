@@ -13,3 +13,5 @@ This is a well-registered cell group which only missed on one day. When choosing
 This phenomenon is likely a natural consequence of the greedy algorithm applied by CellReg, which is not likely to reach a globally optimized registration in most cases. However, challenges are always accompanying with opportunities. By taking this 'mildly distinct results', it may be possible to re-match these neurons based on these distinct results to obtain a better result. That's our aim.
 
 This package is not yet finished.
+
+Only support Python 3.10 (More latest version may work, but you should modify the code a bit since the some pandas functions are deprecated in, e.g., Python 3.12.
