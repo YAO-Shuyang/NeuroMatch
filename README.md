@@ -14,4 +14,4 @@ This phenomenon is likely a natural consequence of the greedy algorithm applied 
 
 This package is not yet finished.
 
-Only support Python 3.10 (More latest version may work, but you should modify the code a bit since the some pandas functions are deprecated in, e.g., Python 3.12.
+Require pandas <= 1.5.3 (python <= 3.11)
